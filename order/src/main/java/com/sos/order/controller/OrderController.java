@@ -2,12 +2,10 @@ package com.sos.order.controller;
 
 import com.sos.order.dto.OrderRequestDTO;
 import com.sos.order.dto.OrderResponseDTO;
+import com.sos.order.dto.OrderUpdateRequestDTO;
 import com.sos.order.service.OrderService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/orders")
@@ -23,6 +21,20 @@ public class OrderController {
     public OrderResponseDTO save(@RequestBody OrderRequestDTO order) {
         return orderService.createOrder(order);
     }
-
+    @GetMapping("/{orderId}")
+    public OrderResponseDTO getOrderById(@PathVariable Long orderId) {
+        // Logic to get an order by ID
+        return orderService.findOrderById(orderId);
+    }
+    @PutMapping("/update")
+    public OrderResponseDTO updateOrder(@RequestBody OrderUpdateRequestDTO order) {
+        // Logic to update an order
+        return orderService.updateOrder(order);
+    }
+    @PutMapping("/cancel")
+    public void cancelOrder(@RequestParam Long orderId) {
+        // Logic to cancel an order
+        orderService.cancelOrder(orderId);
+    }
 
 }

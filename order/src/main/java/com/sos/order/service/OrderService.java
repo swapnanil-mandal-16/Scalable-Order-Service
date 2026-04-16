@@ -1,10 +1,11 @@
 package com.sos.order.service;
 
-import com.sos.order.dto.OrderItemDTO;
 import com.sos.order.dto.OrderRequestDTO;
 import com.sos.order.dto.OrderResponseDTO;
+import com.sos.order.dto.OrderUpdateRequestDTO;
 import com.sos.order.entity.Order;
 import com.sos.order.entity.OrderItem;
+import com.sos.order.mapper.OrderMapper;
 import com.sos.order.repository.OrderRepository;
 import jakarta.transaction.Transactional;
 import org.jspecify.annotations.NonNull;
@@ -28,26 +29,7 @@ public class OrderService {
         // Logic to create an order
         Order newOrder = getNewOrder(order);
         newOrder = orderRepository.save(newOrder);
-        // create and return OrderResponseDTO based on the saved order entity
-        OrderResponseDTO response = new OrderResponseDTO();
-        response.setOrderId(newOrder.getId());
-        response.setCustomerId(newOrder.getCustomerId());
-        response.setTotalAmount(newOrder.getTotalAmount());
-        response.setStatus(newOrder.getStatus());
-
-        // build and set order item DTOs on the response
-        List<OrderItemDTO> itemDTOs = new ArrayList<>();
-        if (newOrder.getOrderItems() != null) {
-            for (OrderItem oi : newOrder.getOrderItems()) {
-                OrderItemDTO dto = new OrderItemDTO();
-                dto.setProductId(oi.getProductId());
-                dto.setQuantity(oi.getQuantity());
-                dto.setUnitPrice(oi.getUnitPrice());
-                itemDTOs.add(dto);
-            }
-        }
-        response.setOrderItemDTOList(itemDTOs);
-        return response;
+        return OrderMapper.toResponseDto(newOrder);
 
     }
 
@@ -75,14 +57,27 @@ public class OrderService {
         return newOrder;
     }
 
-    public void updateOrder() {
+    public OrderResponseDTO updateOrder(OrderUpdateRequestDTO order) {
         // Logic to update an order
+        Order existingOrder = orderRepository.findById(order.getOrderId()).orElseThrow(() -> new RuntimeException("Order not found"));
+        existingOrder.setStatus(order.getStatus());
+        existingOrder = orderRepository.save(existingOrder);
+        return OrderMapper.toResponseDto(existingOrder);
     }
-    public void deleteOrder() {
+    public void cancelOrder(Long orderId) {
         // Logic to delete an order
+        // if order exists, and its not Completed, then cancel it, else throw exception
+        Order existingOrder = orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+        if(existingOrder.getStatus().equalsIgnoreCase("COMPLETED")) {
+            throw new RuntimeException("Cannot delete a completed order");
+        }
+        existingOrder.setStatus("CANCELLED");
+        orderRepository.save(existingOrder);
     }
-    public Order findOrderById(Long orderId) {
-        return null;
+    public OrderResponseDTO findOrderById(Long orderId) {
+        // Logic to find an order by ID
+        Order existingOrder = orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+        return OrderMapper.toResponseDto(existingOrder);
     }
 
 }
