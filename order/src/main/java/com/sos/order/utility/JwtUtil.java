@@ -1,6 +1,5 @@
-package com.sos.auth.utility;
+package com.sos.order.utility;
 
-import com.sos.auth.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
@@ -21,16 +20,6 @@ public class JwtUtil {
 
     private Key getSignKey() {
         return Keys.hmacShaKeyFor(secretKey.getBytes());
-    }
-
-    public String generateToken(User user) {
-        return Jwts.builder()
-                .setSubject(user.getUsername())
-                .claim("role", user.getRole())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 3600 * 1000))
-                .signWith(getSignKey(),SignatureAlgorithm.HS256)
-                .compact();
     }
 
     public String extractUsername(String token) {

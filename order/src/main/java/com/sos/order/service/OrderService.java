@@ -10,10 +10,12 @@ import com.sos.order.repository.OrderRepository;
 import jakarta.transaction.Transactional;
 import org.jspecify.annotations.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class OrderService {
@@ -37,7 +39,11 @@ public class OrderService {
         Order newOrder = new Order();
         double totalAmount = 0.0;
         // Set properties of newOrder based on order DTO
-        newOrder.setCustomerId(order.getCustomerId());
+        String username = Objects.requireNonNull(SecurityContextHolder
+                        .getContext()
+                        .getAuthentication())
+                        .getName();
+        newOrder.setUsername(username);
         newOrder.setStatus("CREATED");
 
         // create orderItem entities based on order items in the order DTO and save them to the database

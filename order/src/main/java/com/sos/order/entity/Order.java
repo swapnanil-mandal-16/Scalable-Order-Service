@@ -25,7 +25,7 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String customerId;
+    private String username;
     private double totalAmount;
     private String status;
 
