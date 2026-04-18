@@ -1,8 +1,10 @@
 package com.sos.order.service;
 
+import com.sos.order.client.InventoryClient;
 import com.sos.order.dto.OrderRequestDTO;
 import com.sos.order.dto.OrderResponseDTO;
 import com.sos.order.dto.OrderUpdateRequestDTO;
+import com.sos.order.dto.ProductResponseDTO;
 import com.sos.order.entity.Order;
 import com.sos.order.entity.OrderItem;
 import com.sos.order.mapper.OrderMapper;
@@ -21,48 +23,34 @@ import java.util.Objects;
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final InventoryClient inventoryClient;
     @Autowired
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(OrderRepository orderRepository,  InventoryClient inventoryClient) {
         this.orderRepository = orderRepository;
+        this.inventoryClient = inventoryClient;
     }
 
     @Transactional
     public OrderResponseDTO createOrder(OrderRequestDTO order) {
         // Logic to create an order
-        Order newOrder = getNewOrder(order);
-        newOrder = orderRepository.save(newOrder);
-        return OrderMapper.toResponseDto(newOrder);
-
-    }
-
-    private static @NonNull Order getNewOrder(OrderRequestDTO order) {
         Order newOrder = new Order();
-        double totalAmount = 0.0;
-        // Set properties of newOrder based on order DTO
+        List<OrderItem> orderItems = validateAndPrepareItems(order);
         String username = Objects.requireNonNull(SecurityContextHolder
                         .getContext()
                         .getAuthentication())
                         .getName();
         newOrder.setUsername(username);
-        newOrder.setStatus("CREATED");
-
-        // create orderItem entities based on order items in the order DTO and save them to the database
-        List<OrderItem> orderItems = new ArrayList<>();
-        for (var item : order.getOrderItems()) {
-            OrderItem orderItem = new OrderItem();
-            orderItem.setProductId(item.getProductId());
-            orderItem.setQuantity(item.getQuantity());
-            // need to get unit price from inventory microservice based on productId and set it in orderItem
-            orderItem.setUnitPrice(1.50); // hardcoded for now, need to get it from inventory microservice
-            totalAmount = totalAmount + (orderItem.getUnitPrice()*orderItem.getQuantity());
-            orderItem.setOrder(newOrder);
-            orderItems.add(orderItem);
+        newOrder.setTotalAmount(calculatePrice(orderItems));
+        for (OrderItem item : orderItems) {
+            item.setOrder(newOrder);
         }
-        newOrder.setTotalAmount(totalAmount);
-        newOrder .setOrderItems(orderItems);
-        return newOrder;
-    }
+        newOrder.setOrderItems(orderItems);
+        newOrder.setStatus("CREATED");
+        reduceStock(orderItems);
+        newOrder = orderRepository.save(newOrder);
+        return OrderMapper.toResponseDto(newOrder);
 
+    }
     public OrderResponseDTO updateOrder(OrderUpdateRequestDTO order) {
         // Logic to update an order
         Order existingOrder = orderRepository.findById(order.getOrderId()).orElseThrow(() -> new RuntimeException("Order not found"));
@@ -86,4 +74,67 @@ public class OrderService {
         return OrderMapper.toResponseDto(existingOrder);
     }
 
+    public List<OrderItem> validateAndPrepareItems(OrderRequestDTO order) {
+        List<OrderItem> orderItems = new ArrayList<>();
+        for (var item : order.getOrderItems()) {
+            OrderItem orderItem = new OrderItem();
+            orderItem.setProductId(item.getProductId());
+            orderItem.setQuantity(item.getQuantity());
+            boolean inStock = false;
+            try {
+                inStock = inventoryClient.checkStock(item.getProductId(), item.getQuantity());
+            } catch (Exception e){
+                throw new RuntimeException("Inventory Service Error for item " + item.getProductId() + " " + item.getQuantity());
+            }
+            if(!inStock) {
+                throw new RuntimeException("Product with id " + item.getProductId() + " is out of stock");
+            }
+            try {
+                ProductResponseDTO productResponseDTO = inventoryClient.getById(item.getProductId());
+                orderItem.setUnitPrice(productResponseDTO.getPrice());
+            }catch (Exception e){
+                throw new RuntimeException("Inventory Service Error for item " + item.getProductId() + " " + item.getQuantity());
+            }
+            orderItems.add(orderItem);
+        }
+        return orderItems;
+    }
+
+    public double calculatePrice(List<OrderItem> orderItems) {
+        double price = 0.0;
+        for (OrderItem orderItem : orderItems) {
+            price += orderItem.getUnitPrice() * orderItem.getQuantity();
+        }
+        return price;
+    }
+    public void reduceStock(List<OrderItem> orderItems) {
+        List<OrderItem> processed = new ArrayList<>();
+
+        try {
+            for (OrderItem orderItem : orderItems) {
+                inventoryClient.reduceStock(
+                        orderItem.getProductId(),
+                        orderItem.getQuantity()
+                );
+                processed.add(orderItem);
+            }
+        } catch (Exception e) {
+            rollbackStock(processed);
+            throw new RuntimeException("Stock reduction failed, rolled back", e);
+        }
+    }
+
+    public void rollbackStock(List<OrderItem> processed) {
+        for (OrderItem orderItem : processed) {
+            try {
+                inventoryClient.increaseStock(
+                        orderItem.getProductId(),
+                        orderItem.getQuantity()
+                );
+            } catch (Exception e) {
+                // Log the failure to rollback, but continue with other rollbacks
+                System.err.println("Failed to rollback stock for product " + orderItem.getProductId() + ": " + e.getMessage());
+            }
+        }
+    }
 }

@@ -22,7 +22,7 @@ public class OrderItem {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long orderItemId;
-    private String productId;
+    private Long productId;
     private int quantity;
     private  double unitPrice;
 

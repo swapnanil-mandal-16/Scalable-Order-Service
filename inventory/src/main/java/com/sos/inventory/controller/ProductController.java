@@ -21,16 +21,20 @@ public class ProductController {
         return productService.create(product);
     }
 
-    @GetMapping("/getbyid")
-    public ProductResponseDTO getbyId(@RequestParam long id) {
+    @GetMapping("/{id}")
+    public ProductResponseDTO getById(@PathVariable long id) {
         return productService.getById(id);
     }
-    @GetMapping("/checkstock")
-    public boolean checkStock(@RequestBody ProductCheckUpdateDTO productCheckUpdateDTO) {
-        return productService.checkStock(productCheckUpdateDTO.getId(), productCheckUpdateDTO.getQuantity());
+    @GetMapping("/{id}/check")
+    public boolean checkStock(@PathVariable long id, @RequestParam int quantity) {
+        return productService.checkStock(id, quantity);
     }
-    @PutMapping("/reducestock")
-    public void reduceStock(@RequestBody ProductCheckUpdateDTO productCheckUpdateDTO) {
-        productService.reduceStock(productCheckUpdateDTO.getId(), productCheckUpdateDTO.getQuantity());
+    @PutMapping("/{id}/reduce")
+    public void reduceStock(@PathVariable long id, @RequestParam int quantity) {
+        productService.reduceStock(id, quantity);
+    }
+    @PutMapping("/{id}/increase")
+    public void increaseStock(@PathVariable long id, @RequestParam int quantity) {
+        productService.increaseStock(id, quantity);
     }
 }

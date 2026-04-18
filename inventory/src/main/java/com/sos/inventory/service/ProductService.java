@@ -49,4 +49,10 @@ public class ProductService {
         product.setQuantity(product.getQuantity() - quantity);
         productRepository.save(product);
     }
+
+    public void increaseStock(long productId, int quantity) {
+        Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
+        product.setQuantity(product.getQuantity() + quantity);
+        productRepository.save(product);
+    }
 }
