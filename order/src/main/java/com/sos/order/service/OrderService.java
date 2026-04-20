@@ -1,14 +1,13 @@
 package com.sos.order.service;
 
 import com.sos.order.client.InventoryClient;
-import com.sos.order.dto.OrderRequestDTO;
-import com.sos.order.dto.OrderResponseDTO;
-import com.sos.order.dto.OrderUpdateRequestDTO;
-import com.sos.order.dto.ProductResponseDTO;
+import com.sos.order.dto.*;
 import com.sos.order.entity.Order;
 import com.sos.order.entity.OrderItem;
 import com.sos.order.mapper.OrderMapper;
 import com.sos.order.repository.OrderRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import jakarta.transaction.Transactional;
 import org.jspecify.annotations.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +16,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class OrderService {
@@ -34,7 +35,11 @@ public class OrderService {
     public OrderResponseDTO createOrder(OrderRequestDTO order) {
         // Logic to create an order
         Order newOrder = new Order();
-        List<OrderItem> orderItems = validateAndPrepareItems(order);
+        List<ProductBulkResponseDTO> response = getBulkProductsWithResilience(mapToBulkRequest(order));
+        if (response.isEmpty()) {
+            throw new RuntimeException("Invalid inventory response");
+        }
+        List<OrderItem> orderItems = buildOrderItems(response, order);
         String username = Objects.requireNonNull(SecurityContextHolder
                         .getContext()
                         .getAuthentication())
@@ -46,7 +51,7 @@ public class OrderService {
         }
         newOrder.setOrderItems(orderItems);
         newOrder.setStatus("CREATED");
-        reduceStock(orderItems);
+        inventoryClient.bulkReduceStock(mapToBulkRequest(newOrder.getOrderItems()));
         newOrder = orderRepository.save(newOrder);
         return OrderMapper.toResponseDto(newOrder);
 
@@ -74,32 +79,6 @@ public class OrderService {
         return OrderMapper.toResponseDto(existingOrder);
     }
 
-    public List<OrderItem> validateAndPrepareItems(OrderRequestDTO order) {
-        List<OrderItem> orderItems = new ArrayList<>();
-        for (var item : order.getOrderItems()) {
-            OrderItem orderItem = new OrderItem();
-            orderItem.setProductId(item.getProductId());
-            orderItem.setQuantity(item.getQuantity());
-            boolean inStock = false;
-            try {
-                inStock = inventoryClient.checkStock(item.getProductId(), item.getQuantity());
-            } catch (Exception e){
-                throw new RuntimeException("Inventory Service Error for item " + item.getProductId() + " " + item.getQuantity());
-            }
-            if(!inStock) {
-                throw new RuntimeException("Product with id " + item.getProductId() + " is out of stock");
-            }
-            try {
-                ProductResponseDTO productResponseDTO = inventoryClient.getById(item.getProductId());
-                orderItem.setUnitPrice(productResponseDTO.getPrice());
-            }catch (Exception e){
-                throw new RuntimeException("Inventory Service Error for item " + item.getProductId() + " " + item.getQuantity());
-            }
-            orderItems.add(orderItem);
-        }
-        return orderItems;
-    }
-
     public double calculatePrice(List<OrderItem> orderItems) {
         double price = 0.0;
         for (OrderItem orderItem : orderItems) {
@@ -125,16 +104,79 @@ public class OrderService {
     }
 
     public void rollbackStock(List<OrderItem> processed) {
-        for (OrderItem orderItem : processed) {
-            try {
-                inventoryClient.increaseStock(
-                        orderItem.getProductId(),
-                        orderItem.getQuantity()
-                );
-            } catch (Exception e) {
-                // Log the failure to rollback, but continue with other rollbacks
-                System.err.println("Failed to rollback stock for product " + orderItem.getProductId() + ": " + e.getMessage());
-            }
+        inventoryClient.bulkIncreaseStock(mapToBulkRequest(processed));
+    }
+
+    public List<ProductBulkRequestDTO> mapToBulkRequest(OrderRequestDTO order) {
+        List<ProductBulkRequestDTO> list = new ArrayList<>();
+
+        for (var item : order.getOrderItems()) {
+            ProductBulkRequestDTO dto = new ProductBulkRequestDTO();
+            dto.setProductId(item.getProductId());
+            dto.setQuantity(item.getQuantity());
+            list.add(dto);
         }
+
+        return list;
+    }
+
+    public List<ProductBulkRequestDTO> mapToBulkRequest(List<OrderItem> orderItems) {
+        List<ProductBulkRequestDTO> list = new ArrayList<>();
+
+        for (var item : orderItems) {
+            ProductBulkRequestDTO dto = new ProductBulkRequestDTO();
+            dto.setProductId(item.getProductId());
+            dto.setQuantity(item.getQuantity());
+            list.add(dto);
+        }
+
+        return list;
+    }
+
+    public List<OrderItem> buildOrderItems(
+            List<ProductBulkResponseDTO> responses,
+            OrderRequestDTO order) {
+
+        Map<Long, ProductBulkResponseDTO> map = responses.stream()
+                .collect(Collectors.toMap(
+                        ProductBulkResponseDTO::getProductId,
+                        r -> r
+                ));
+
+        List<OrderItem> items = new ArrayList<>();
+
+        for (var reqItem : order.getOrderItems()) {
+
+            ProductBulkResponseDTO res = map.get(reqItem.getProductId());
+
+            if (res == null || !res.isInStock()) {
+                throw new RuntimeException("Product out of stock: " + reqItem.getProductId());
+            }
+
+            OrderItem item = new OrderItem();
+            item.setProductId(reqItem.getProductId());
+            item.setQuantity(reqItem.getQuantity());
+            item.setUnitPrice(res.getPrice());
+
+            items.add(item);
+        }
+
+        return items;
+    }
+
+    @Retry(name = "inventoryService", fallbackMethod = "bulkFallback")
+    @CircuitBreaker(name = "inventoryService", fallbackMethod = "bulkFallback")
+    public List<ProductBulkResponseDTO> getBulkProductsWithResilience(
+            List<ProductBulkRequestDTO> request) {
+
+        return inventoryClient.checkAndGetProducts(request);
+    }
+    public List<ProductBulkResponseDTO> bulkFallback(
+            List<ProductBulkRequestDTO> request,
+            Exception ex) {
+
+        throw new RuntimeException(
+                "Inventory service unavailable. Please try again later.", ex
+        );
     }
 }

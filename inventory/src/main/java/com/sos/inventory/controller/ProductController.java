@@ -1,11 +1,11 @@
 package com.sos.inventory.controller;
 
-import com.sos.inventory.dto.ProductCheckUpdateDTO;
-import com.sos.inventory.dto.ProductRequestDTO;
-import com.sos.inventory.dto.ProductResponseDTO;
+import com.sos.inventory.dto.*;
 import com.sos.inventory.service.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/products")
@@ -37,4 +37,24 @@ public class ProductController {
     public void increaseStock(@PathVariable long id, @RequestParam int quantity) {
         productService.increaseStock(id, quantity);
     }
+
+    @PostMapping("/bulk")
+    public List<ProductBulkResponseDTO> checkAndGetProducts(
+            @RequestBody List<ProductBulkRequestDTO> requests) {
+        return productService.checkAndGetProducts(requests);
+    }
+
+    @PutMapping("/bulkreduce")
+    public void bulkReduceStock(
+            @RequestBody List<ProductBulkRequestDTO> requests) {
+        productService.bulkReduce(requests);
+    }
+
+    @PutMapping("/bulkincrease")
+    public void bulkIncreaseStock(
+            @RequestBody List<ProductBulkRequestDTO> requests) {
+        productService.bulkIncrease(requests);
+    }
+
+
 }

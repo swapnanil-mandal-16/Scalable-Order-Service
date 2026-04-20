@@ -1,11 +1,12 @@
 package com.sos.order.client;
 
+import com.sos.order.dto.ProductBulkRequestDTO;
+import com.sos.order.dto.ProductBulkResponseDTO;
 import com.sos.order.dto.ProductResponseDTO;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @FeignClient(name = "inventory-service", url = "http://localhost:8082")
 public interface InventoryClient {
@@ -20,4 +21,16 @@ public interface InventoryClient {
 
     @PutMapping("/products/{id}/increase")
     void increaseStock(@PathVariable("id") long id, @RequestParam("quantity") int quantity);
+
+    @PostMapping("/products/bulk")
+    List<ProductBulkResponseDTO> checkAndGetProducts(
+            @RequestBody List<ProductBulkRequestDTO> request);
+
+    @PutMapping("/products/bulkreduce")
+    void bulkReduceStock(
+            @RequestBody List<ProductBulkRequestDTO> requests);
+
+    @PutMapping("/bulkincrease")
+    void bulkIncreaseStock(
+            @RequestBody List<ProductBulkRequestDTO> requests);
 }
