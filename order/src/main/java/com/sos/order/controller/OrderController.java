@@ -31,10 +31,15 @@ public class OrderController {
         // Logic to update an order
         return orderService.updateOrder(order);
     }
-    @PutMapping("/cancel")
-    public void cancelOrder(@RequestParam Long orderId) {
+    @PutMapping("/cancel/{orderId}")
+    public void cancelOrder(@PathVariable Long orderId) {
         // Logic to cancel an order
         orderService.cancelOrder(orderId);
+    }
+
+    @PutMapping("/complete/{orderId}")
+    public OrderResponseDTO completeOrder(@PathVariable Long orderId) {
+        return orderService.completeOrder(orderId);
     }
 
 }

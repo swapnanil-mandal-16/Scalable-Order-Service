@@ -19,7 +19,7 @@ public final class OrderMapper {
         response.setOrderId(order.getId());
         response.setUsername(order.getUsername());
         response.setTotalAmount(order.getTotalAmount());
-        response.setStatus(order.getStatus());
+        response.setStatus(String.valueOf(order.getStatus()));
 
         List<OrderItemDTO> itemDTOs = new ArrayList<>();
         if (order.getOrderItems() != null) {

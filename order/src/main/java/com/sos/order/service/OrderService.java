@@ -4,6 +4,7 @@ import com.sos.order.client.InventoryClient;
 import com.sos.order.dto.*;
 import com.sos.order.entity.Order;
 import com.sos.order.entity.OrderItem;
+import com.sos.order.entity.OrderStatus;
 import com.sos.order.mapper.OrderMapper;
 import com.sos.order.repository.OrderRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -50,8 +51,12 @@ public class OrderService {
             item.setOrder(newOrder);
         }
         newOrder.setOrderItems(orderItems);
-        newOrder.setStatus("CREATED");
-        inventoryClient.bulkReduceStock(mapToBulkRequest(newOrder.getOrderItems()));
+        newOrder.setStatus(OrderStatus.PENDING);
+        newOrder = orderRepository.save(newOrder);
+
+        inventoryClient.bulkReduceStock(mapToBulkRequest(newOrder));
+
+        newOrder.setStatus(OrderStatus.CONFIRMED);
         newOrder = orderRepository.save(newOrder);
         return OrderMapper.toResponseDto(newOrder);
 
@@ -59,7 +64,7 @@ public class OrderService {
     public OrderResponseDTO updateOrder(OrderUpdateRequestDTO order) {
         // Logic to update an order
         Order existingOrder = orderRepository.findById(order.getOrderId()).orElseThrow(() -> new RuntimeException("Order not found"));
-        existingOrder.setStatus(order.getStatus());
+        existingOrder.setStatus(OrderStatus.valueOf(order.getStatus()));
         existingOrder = orderRepository.save(existingOrder);
         return OrderMapper.toResponseDto(existingOrder);
     }
@@ -67,10 +72,11 @@ public class OrderService {
         // Logic to delete an order
         // if order exists, and its not Completed, then cancel it, else throw exception
         Order existingOrder = orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
-        if(existingOrder.getStatus().equalsIgnoreCase("COMPLETED")) {
-            throw new RuntimeException("Cannot delete a completed order");
+        if(!existingOrder.getStatus().canTransitionTo(OrderStatus.CANCELLED)) {
+            throw new RuntimeException("Invalid order status transition.");
         }
-        existingOrder.setStatus("CANCELLED");
+        existingOrder.setStatus(OrderStatus.CANCELLED);
+        inventoryClient.bulkIncreaseStock(mapToBulkRequest(existingOrder));
         orderRepository.save(existingOrder);
     }
     public OrderResponseDTO findOrderById(Long orderId) {
@@ -86,26 +92,6 @@ public class OrderService {
         }
         return price;
     }
-    public void reduceStock(List<OrderItem> orderItems) {
-        List<OrderItem> processed = new ArrayList<>();
-
-        try {
-            for (OrderItem orderItem : orderItems) {
-                inventoryClient.reduceStock(
-                        orderItem.getProductId(),
-                        orderItem.getQuantity()
-                );
-                processed.add(orderItem);
-            }
-        } catch (Exception e) {
-            rollbackStock(processed);
-            throw new RuntimeException("Stock reduction failed, rolled back", e);
-        }
-    }
-
-    public void rollbackStock(List<OrderItem> processed) {
-        inventoryClient.bulkIncreaseStock(mapToBulkRequest(processed));
-    }
 
     public List<ProductBulkRequestDTO> mapToBulkRequest(OrderRequestDTO order) {
         List<ProductBulkRequestDTO> list = new ArrayList<>();
@@ -116,20 +102,18 @@ public class OrderService {
             dto.setQuantity(item.getQuantity());
             list.add(dto);
         }
-
         return list;
     }
 
-    public List<ProductBulkRequestDTO> mapToBulkRequest(List<OrderItem> orderItems) {
+    public List<ProductBulkRequestDTO> mapToBulkRequest(Order order) {
         List<ProductBulkRequestDTO> list = new ArrayList<>();
-
-        for (var item : orderItems) {
+        for (var item : order.getOrderItems()) {
             ProductBulkRequestDTO dto = new ProductBulkRequestDTO();
+            dto.setOrderId(order.getId());
             dto.setProductId(item.getProductId());
             dto.setQuantity(item.getQuantity());
             list.add(dto);
         }
-
         return list;
     }
 
@@ -178,5 +162,19 @@ public class OrderService {
         throw new RuntimeException(
                 "Inventory service unavailable. Please try again later.", ex
         );
+    }
+
+    public OrderResponseDTO completeOrder(Long orderId) {
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        if(!order.getStatus().canTransitionTo(OrderStatus.COMPLETED)) {
+            throw new RuntimeException("Invalid order status transition.");
+        }
+
+        order.setStatus(OrderStatus.COMPLETED);
+
+        return OrderMapper.toResponseDto(orderRepository.save(order));
     }
 }

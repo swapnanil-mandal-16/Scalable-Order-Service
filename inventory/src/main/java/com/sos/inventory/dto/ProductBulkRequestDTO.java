@@ -4,6 +4,7 @@ import lombok.Data;
 
 @Data
 public class ProductBulkRequestDTO {
+    private long orderId;
     private long productId;
     private int quantity;
 }
