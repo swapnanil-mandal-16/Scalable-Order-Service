@@ -54,6 +54,9 @@ public class OrderService {
         newOrder.setStatus(OrderStatus.PENDING);
         newOrder = orderRepository.save(newOrder);
 
+        OrderCreatedEvent event = new OrderCreatedEvent();
+        event.setOrderId(newOrder.getId());
+        event.setItems(newOrder.getOrderItems().stream().map(OrderMapper::toItemDto).collect(Collectors.toList()));
         inventoryClient.bulkReduceStock(mapToBulkRequest(newOrder));
 
         newOrder.setStatus(OrderStatus.CONFIRMED);

@@ -34,5 +34,15 @@ public final class OrderMapper {
         response.setOrderItemDTOList(itemDTOs);
         return response;
     }
+
+    public static OrderItemDTO toItemDto(OrderItem orderItem) {
+        if (orderItem == null) return null;
+        OrderItemDTO dto = new OrderItemDTO();
+        dto.setProductId(orderItem.getProductId());
+        dto.setQuantity(orderItem.getQuantity());
+        dto.setUnitPrice(orderItem.getUnitPrice());
+
+        return dto;
+    }
 }
 
